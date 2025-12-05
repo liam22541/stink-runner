@@ -1,0 +1,44 @@
+body {
+    background: #181818;
+    color: #ececec;
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    text-align: center;
+}
+
+h1 {
+    letter-spacing: 2px;
+    text-shadow: 0 2px 5px #0a0a0a;
+    margin-top: 24px;
+}
+
+#game-container {
+    margin: 20px auto;
+    width: 500px;
+    background: #2e2e36;
+    border: 3px solid #242424;
+    border-radius: 10px;
+    padding: 10px 0;
+    box-shadow: 0 2px 12px #000a;
+}
+
+#instructions {
+    margin-top: 10px;
+}
+
+#score {
+    font-size: 1.2em;
+    color: #92ff53;
+}
+
+#gameCanvas {
+    background: linear-gradient(to bottom, #2d3a3b, #171c1c 85%);
+    border-radius: 8px;
+    box-shadow: 0 0 24px #252530 inset;
+}
+
+#gameOverMessage {
+    color: #ff7373;
+    font-size: 1.3em;
+    font-weight: bold;
+}
