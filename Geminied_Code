@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stink Runner</title>
+    <style>
+        /* Custom CSS for a dark, horror aesthetic */
+        body {
+            background-color: #111111;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            color: #ccc;
+        }
+
+        #game-container {
+            border: 4px solid #333;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.1); /* Subtle green glow */
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #000;
+            position: relative;
+        }
+
+        #gameCanvas {
+            display: block;
+            background-color: #0d0d0d;
+        }
+
+        #message-box {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: none; /* Controlled by JS */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 4px;
+        }
+
+        #message-box h2 {
+            color: #ff0044; /* Blood red */
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        #message-box p {
+            color: #aaaaaa;
+            margin-bottom: 30px;
+        }
+
+        .game-controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .game-controls button {
+            background-color: #ff0044;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px #cc0035;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .game-controls button:hover {
+            background-color: #cc0035;
+        }
+
+        .game-controls button:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 #cc0035;
+        }
+
+        .instructions {
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            border-left: 3px solid #00ff44;
+        }
+
+        .instructions p {
+            font-size: 0.9rem;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            #game-container {
+                width: 95vw;
+                height: 95vw;
+                max-width: 400px;
+                max-height: 400px;
+            }
+            #message-box h2 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Stink Runner</h1>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="message-box">
+            <h2 id="message-title">Game Over</h2>
+            <p id="message-text">The Stinker caught you! You lasted <span id="final-score">0</span> seconds.</p>
+            <div class="game-controls">
+                <button id="restart-button">Restart</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="instructions">
+        <p><strong>Goal:</strong> Avoid the dark, glowing monster (The Stinker).</p>
+        <p><strong>Controls:</strong> Use <strong>WASD</strong> or <strong>Arrow Keys</strong> to move.</p>
+        <p><strong>DANGER:</strong> The bright green particles show the monster's "Stink" radius. Stay out of the green!</p>
+    </div>
+
+    <script>
+        // --- Core Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const messageBox = document.getElementById('message-box');
+        const restartButton = document.getElementById('restart-button');
+        const finalScoreElement = document.getElementById('final-score');
+
+        // Initial sizing (will be resized on load)
+        let CANVAS_WIDTH = 600;
+        let CANVAS_HEIGHT = 600;
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        let gameRunning = false;
+        let score = 0;
+        let lastTime = 0;
+
+        // --- Game Entities ---
+
+        class Entity {
+            constructor(x, y, radius, color, speed) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.speed = speed;
+                this.velX = 0;
+                this.velY = 0;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            update() {
+                this.x += this.velX;
+                this.y += this.velY;
+                
+                // Keep entity within bounds
+                this.x = Math.max(this.radius, Math.min(CANVAS_WIDTH - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(CANVAS_HEIGHT - this.radius, this.y));
+            }
+        }
+
+        class Player extends Entity {
+            constructor(x, y) {
+                super(x, y, 10, '#ffffff', 4); // White, slightly faster
+                this.keys = {};
+            }
+
+            handleInput() {
+                this.velX = 0;
+                this.velY = 0;
+                
+                // Movement speed
+                let moveSpeed = this.speed;
+
+                if (this.keys['ArrowUp'] || this.keys['w']) this.velY = -moveSpeed;
+                if (this.keys['ArrowDown'] || this.keys['s']) this.velY = moveSpeed;
+                if (this.keys['ArrowLeft'] || this.keys['a']) this.velX = -moveSpeed;
+                if (this.keys['ArrowRight'] || this.keys['d']) this.velX = moveSpeed;
+
+                // Normalize diagonal speed
+                if (this.velX !== 0 && this.velY !== 0) {
+                    this.velX /= Math.sqrt(2);
+                    this.velY /= Math.sqrt(2);
+                }
+            }
+
+            update() {
+                this.handleInput();
+                super.update();
+            }
+
+            draw() {
+                super.draw();
+                // Draw a faint outline to emphasize the runner
+                ctx.strokeStyle = '#ffdddd';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        class Monster extends Entity {
+            constructor(x, y) {
+                // Dark red/black, slower speed
+                super(x, y, 15, '#33000a', 3.5);
+                this.emissionRate = 5; // Particles per frame
+            }
+
+            chase(targetX, targetY) {
+                const dx = targetX - this.x;
+                const dy = targetY - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > 1) { // Avoid division by zero and jittering
+                    this.velX = (dx / distance) * this.speed * 0.9; // Slightly hesitant movement
+                    this.velY = (dy / distance) * this.speed * 0.9;
+                } else {
+                    this.velX = 0;
+                    this.velY = 0;
+                }
+            }
+
+            update(player) {
+                this.chase(player.x, player.y);
+                super.update();
+            }
+
+            draw() {
+                super.draw();
+                // Add a pulsating horror glow (subtle green/red mix)
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = 'rgba(255, 0, 68, 0.5)';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+                ctx.shadowBlur = 0; // Reset shadow for other drawings
+            }
+        }
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x + (Math.random() - 0.5) * 5; // Slight offset from monster
+                this.y = y + (Math.random() - 0.5) * 5;
+                this.radius = Math.random() * 3 + 1; // 1 to 4
+                this.color = 'rgba(0, 255, 68, '; // Bright green 'stink'
+                this.velocity = {
+                    x: (Math.random() - 0.5) * 0.5,
+                    y: (Math.random() - 0.5) * 0.5
+                };
+                this.opacity = 1;
+                this.life = 100; // Lifespan in frames
+                this.maxLife = 100;
+            }
+
+            update() {
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+                this.life--;
+                this.opacity = this.life / this.maxLife; // Fade out
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * this.opacity, 0, Math.PI * 2);
+                ctx.fillStyle = this.color + this.opacity + ')';
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        let player;
+        let monster;
+        let particles = [];
+
+        // --- Game Logic ---
+
+        function initGame() {
+            // Setup canvas size
+            const container = document.getElementById('game-container');
+            CANVAS_WIDTH = container.offsetWidth;
+            CANVAS_HEIGHT = container.offsetHeight;
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+
+            // Initialize entities
+            player = new Player(CANVAS_WIDTH / 4, CANVAS_HEIGHT / 2);
+            monster = new Monster(CANVAS_WIDTH * 3 / 4, CANVAS_HEIGHT / 2);
+            particles = [];
+            score = 0;
+            gameRunning = true;
+            messageBox.style.display = 'none';
+
+            // Start the loop
+            lastTime = performance.now();
+            gameLoop();
+        }
+
+        function handleStinkEmission() {
+            for (let i = 0; i < monster.emissionRate; i++) {
+                particles.push(new Particle(monster.x, monster.y));
+            }
+        }
+
+        function checkCollision() {
+            const dx = player.x - monster.x;
+            const dy = player.y - monster.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Player radius + Monster radius + a small buffer for the 'stink' effect
+            const collisionThreshold = player.radius + monster.radius + 5; 
+
+            if (distance < collisionThreshold) {
+                endGame();
+            }
+        }
+
+        function updateGame() {
+            // Update score (time survived)
+            score += 1 / 60; // Assuming ~60 FPS update rate
+
+            player.update();
+            monster.update(player);
+
+            // Stink effect
+            handleStinkEmission();
+
+            // Update and clean up particles
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => p.update());
+            
+            checkCollision();
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.fillStyle = '#0d0d0d';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Draw particles first (they are the background hazard)
+            particles.forEach(p => p.draw());
+
+            // Draw entities
+            monster.draw();
+            player.draw();
+
+            // Draw Score
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '16px Inter';
+            ctx.fillText(`Time Survived: ${score.toFixed(2)}s`, 10, 25);
+        }
+
+        function gameLoop(currentTime) {
+            if (!gameRunning) return;
+
+            const deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            
+            // Limit updates to prevent physics errors on lag
+            if (deltaTime < 20) { 
+                 updateGame();
+            }
+           
+            drawGame();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameRunning = false;
+            finalScoreElement.textContent = score.toFixed(2);
+            messageBox.style.display = 'flex';
+        }
+
+        // --- Event Listeners and Setup ---
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            player.keys[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            player.keys[e.key.toLowerCase()] = false;
+        });
+
+        // Resize function for responsiveness
+        function resizeCanvas() {
+             const container = document.getElementById('game-container');
+             CANVAS_WIDTH = container.offsetWidth;
+             CANVAS_HEIGHT = container.offsetHeight;
+             canvas.width = CANVAS_WIDTH;
+             canvas.height = CANVAS_HEIGHT;
+
+             // If the game is initialized, reset player/monster position to keep them centered relative to the new size
+             if (player && monster) {
+                 player.x = CANVAS_WIDTH / 4;
+                 player.y = CANVAS_HEIGHT / 2;
+                 monster.x = CANVAS_WIDTH * 3 / 4;
+                 monster.y = CANVAS_HEIGHT / 2;
+             }
+
+             // If the game ended and the box is visible, redraw the game to update the background
+             if (!gameRunning && messageBox.style.display === 'flex') {
+                 drawGame(); 
+             }
+        }
+
+        // Wait for the window to load before initializing
+        window.onload = function() {
+            resizeCanvas();
+            initGame();
+        };
+
+        window.addEventListener('resize', resizeCanvas);
+
+        restartButton.addEventListener('click', () => {
+            initGame();
+        });
+
+    </script>
+</body>
+</html>
